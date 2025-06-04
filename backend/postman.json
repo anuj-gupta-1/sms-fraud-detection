@@ -1,0 +1,82 @@
+{
+  "info": {
+    "name": "SMS Scam Detection API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5000/health",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "Analyze Legitimate SMS",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"Your prescription is ready for pickup at CVS\",\n  \"sender\": \"CVS\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/analyze",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["analyze"]
+        }
+      }
+    },
+    {
+      "name": "Analyze Scam SMS",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"URGENT! Account suspended! Click bit.ly/fix123 to verify NOW!\",\n  \"sender\": \"+1234567890\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/analyze",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["analyze"]
+        }
+      }
+    },
+    {
+      "name": "Test Accuracy",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5000/test",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["test"]
+        }
+      }
+    }
+  ]
+}

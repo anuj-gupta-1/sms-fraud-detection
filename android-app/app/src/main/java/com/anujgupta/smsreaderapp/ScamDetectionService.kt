@@ -12,25 +12,21 @@ import java.util.concurrent.TimeUnit
 
 /**
  * ScamDetectionService - Connects to AI backend for scam analysis
- * Think of this as your app's connection to a smart detective who can
- * analyze messages and tell you if they look suspicious
  */
 class ScamDetectionService {
 
     companion object {
         private const val TAG = "ScamDetectionService"
-
-        // This is the address where your Python AI server will be running
-        // Like the address of the detective's office
-   //     private const val BASE_URL = "http://10.0.2.2:5000"  // For Android emulator
-        // If testing on real phone connected via USB, use your computer's IP:
-        private const val BASE_URL = "http://192.168.29.36:5000"  // Replace with your computer's IP
-
-        private const val ANALYZE_ENDPOINT = "/analyze"
-        private const val HEALTH_ENDPOINT = "/health"
+        // Ensure this IP address is correct for your setup.
+        // This should be your computer's IP address on your local network if running the Python server there.
+        // The Android emulator uses 10.0.2.2 to refer to the host machine's localhost.
+        // If using a physical device for testing, ensure it's on the same Wi-Fi network
+        // and replace 10.0.2.2 with your computer's actual local IP address.
+        private const val BASE_URL = "http://192.168.29.36:5000" // As per your original file
+        private const val ANALYZE_ENDPOINT = "/analyze" //
+        private const val HEALTH_ENDPOINT = "/health" //
     }
 
-    // HTTP client - like having a messenger to carry messages back and forth
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)      // Wait 30 seconds to connect
         .readTimeout(60, TimeUnit.SECONDS)         // Wait 60 seconds for response
@@ -38,48 +34,66 @@ class ScamDetectionService {
         .build()
 
     /**
-     * Test if the Python AI server is running and reachable
-     * Like calling the detective's office to see if anyone answers
+     * Test if the Python AI server is running and reachable.
+     * Returns a pair: Boolean for success, and a String for a detailed status message.
      */
-    suspend fun testConnection(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun testConnection(): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Testing connection to $BASE_URL$HEALTH_ENDPOINT")
-
             val request = Request.Builder()
                 .url("$BASE_URL$HEALTH_ENDPOINT")
                 .get()
                 .build()
 
             val response = client.newCall(request).execute()
+            val responseBody = response.body?.string()
             val isSuccess = response.isSuccessful
 
-            Log.d(TAG, "Connection test result: $isSuccess")
+            Log.d(TAG, "Connection test result: $isSuccess, Body: $responseBody")
+
+            var statusMessage = if (isSuccess) "Connected ✓" else "Disconnected ✗ (Code: ${response.code})"
+
+            if (isSuccess && responseBody != null) {
+                try {
+                    val jsonResponse = JSONObject(responseBody)
+                    val ollamaStatus = jsonResponse.optString("ollama_status", "N/A") // From main.py health check
+                    val currentModel = jsonResponse.optString("current_model", "N/A") // From main.py health check
+                    statusMessage = "Connected ✓ (Ollama: $ollamaStatus, Model: $currentModel)"
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing health response: ${e.message}")
+                    statusMessage = "Connected ✓ (but error parsing health details)"
+                }
+            } else if (!isSuccess) {
+                statusMessage = "Server Unreachable (Code: ${response.code})"
+            }
+
             response.close()
+            return@withContext Pair(isSuccess, statusMessage)
 
-            return@withContext isSuccess
-
-        } catch (e: Exception) {
+        } catch (e: IOException) {
+            Log.e(TAG, "Connection test (network error): ${e.message}")
+            return@withContext Pair(false, "Network Error: ${e.message}")
+        }
+        catch (e: Exception) {
             Log.e(TAG, "Connection test failed: ${e.message}")
-            return@withContext false
+            return@withContext Pair(false, "Connection Error: ${e.message}")
         }
     }
 
     /**
      * Send an SMS message to the AI for scam analysis
-     * Like handing a suspicious letter to a detective and asking "Is this a scam?"
      */
     suspend fun analyzeSms(messageBody: String, senderAddress: String): ScamAnalysisResult = withContext(Dispatchers.IO) {
         try {
-            Log.d(TAG, "Analyzing message from $senderAddress")
+            Log.d(TAG, "Analyzing message from $senderAddress to $BASE_URL$ANALYZE_ENDPOINT")
 
-            // Prepare the data to send to the AI (like filling out a case form)
+            // Prepare the data to send to the AI
             val jsonData = JSONObject().apply {
-                put("message", messageBody)
-                put("sender", senderAddress)
-                put("timestamp", System.currentTimeMillis())
+                put("message", messageBody) // Expected by main.py /analyze
+                put("sender", senderAddress) // Expected by main.py /analyze
+                put("timestamp", System.currentTimeMillis()) //
             }
 
-            // Create the request to send to the Python server
             val requestBody = jsonData.toString().toRequestBody("application/json".toMediaType())
             val request = Request.Builder()
                 .url("$BASE_URL$ANALYZE_ENDPOINT")
@@ -88,28 +102,20 @@ class ScamDetectionService {
 
             // Send the request and wait for response
             val response = client.newCall(request).execute()
+            val responseBodyString = response.body?.string() // Read body once
+            Log.d(TAG, "Raw response from /analyze: $responseBodyString")
 
-            if (response.isSuccessful) {
-                // Parse the AI's response
-                val responseBody = response.body?.string()
-                response.close()
 
-                if (responseBody != null) {
-                    return@withContext parseAnalysisResponse(responseBody)
-                } else {
-                    return@withContext ScamAnalysisResult(
-                        classification = "ERROR",
-                        confidence = "NONE",
-                        error = "Empty response from server"
-                    )
-                }
+            if (response.isSuccessful && responseBodyString != null) {
+                response.close() // Close after reading
+                return@withContext parseAnalysisResponse(responseBodyString)
             } else {
-                Log.e(TAG, "Server error: ${response.code}")
+                Log.e(TAG, "Server error: ${response.code}, Body: $responseBodyString")
                 response.close()
                 return@withContext ScamAnalysisResult(
                     classification = "ERROR",
                     confidence = "NONE",
-                    error = "Server returned error: ${response.code}"
+                    error = "Server returned error: ${response.code} - ${response.message}"
                 )
             }
 
@@ -132,28 +138,57 @@ class ScamDetectionService {
 
     /**
      * Parse the AI's response into a structured result
-     * Like reading the detective's report and organizing the findings
      */
     private fun parseAnalysisResponse(responseBody: String): ScamAnalysisResult {
         try {
             val jsonResponse = JSONObject(responseBody)
 
-            val classification = jsonResponse.optString("classification", "UNKNOWN")
-            val confidence = jsonResponse.optString("confidence", "UNKNOWN")
-            val reason = jsonResponse.optString("reason", "")
-            val riskScore = jsonResponse.optDouble("risk_score", 0.0)
+            // Helper functions for robust optional field parsing
+            fun JSONObject.optNullableString(name: String): String? = if (has(name)) optString(name) else null
+            fun JSONObject.optNullableBoolean(name: String): Boolean? = if (has(name)) optBoolean(name) else null
+            fun JSONObject.optNullableInt(name: String): Int? = if (has(name)) optInt(name) else null
+            fun JSONObject.optNullableDouble(name: String): Double? = if (has(name)) optDouble(name) else null
 
-            Log.d(TAG, "Analysis result: $classification ($confidence confidence)")
+            // Fields from main.py's classify_sms_with_ollama or analyze_with_fallback_rules, plus Flask route additions
+            val classification = jsonResponse.getString("classification")
+            val confidence = jsonResponse.getString("confidence")
+            val confidenceScore = jsonResponse.optNullableInt("confidence_score")
+            val reason = jsonResponse.optString("reason", "N/A") // Default if missing
+            val riskScore = jsonResponse.optDouble("risk_score", 0.0) // Default if missing
+
+            val detectionMethod = jsonResponse.optNullableString("detection_method")
+            val modelUsed = jsonResponse.optNullableString("model_used")
+
+            val sender = jsonResponse.optNullableString("sender")
+            val messagePreview = jsonResponse.optNullableString("message_preview")
+            val alertLevel = jsonResponse.optNullableString("alert_level")
+            val processingTimeSeconds = jsonResponse.optNullableDouble("processing_time_seconds")
+            val timestamp = jsonResponse.optNullableString("timestamp")
+
+            val error = jsonResponse.optNullableString("error")
+            val fallbackUsed = jsonResponse.optNullableBoolean("fallback_used")
+
+            Log.d(TAG, "Parsed Analysis result: $classification ($confidence)")
 
             return ScamAnalysisResult(
                 classification = classification,
                 confidence = confidence,
+                confidence_score = confidenceScore,
                 reason = reason,
-                riskScore = riskScore
+                risk_score = riskScore,
+                detection_method = detectionMethod,
+                model_used = modelUsed,
+                sender = sender,
+                message_preview = messagePreview,
+                alert_level = alertLevel,
+                processing_time_seconds = processingTimeSeconds,
+                timestamp = timestamp,
+                error = error,
+                fallback_used = fallbackUsed
             )
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing analysis response: ${e.message}")
+            Log.e(TAG, "Error parsing analysis response: ${e.message} from body: $responseBody")
             return ScamAnalysisResult(
                 classification = "ERROR",
                 confidence = "NONE",
@@ -161,37 +196,4 @@ class ScamDetectionService {
             )
         }
     }
-}
-
-/**
- * ScamAnalysisResult - The AI's verdict on whether a message is a scam
- * Think of this as the detective's report after investigating a suspicious message
- */
-data class ScamAnalysisResult(
-    val classification: String,        // SCAM, LEGITIMATE, SUSPICIOUS, etc.
-    val confidence: String,           // HIGH, MEDIUM, LOW
-    val reason: String = "",          // Why the AI thinks this (optional)
-    val riskScore: Double = 0.0,      // Risk score from 0.0 to 1.0
-    val error: String? = null         // Any error that occurred
-) {
-    /**
-     * Quick check: Is this message classified as a scam?
-     * Like asking: "Should I be worried about this message?"
-     */
-    val isScam: Boolean
-        get() = classification.equals("SCAM", ignoreCase = true)
-
-    /**
-     * Quick check: Is this message suspicious (not definitely scam, but concerning)?
-     * Like asking: "Should I be cautious about this message?"
-     */
-    val isSuspicious: Boolean
-        get() = classification.equals("SUSPICIOUS", ignoreCase = true)
-
-    /**
-     * Was there an error during analysis?
-     * Like asking: "Did something go wrong during the investigation?"
-     */
-    val hasError: Boolean
-        get() = error != null || classification.equals("ERROR", ignoreCase = true)
 }

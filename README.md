@@ -36,7 +36,7 @@ This system helps users identify potentially fraudulent SMS messages by analyzin
 - **IDE**: Visual Studio
 - **AI Framework**: Ollama with LLM models
 - **API**: RESTful web service
-- **Dependencies**: [List will be added based on your requirements.txt]
+- **Dependencies**: flask flask_cors CORS requests json logging
 
 ## 📋 Prerequisites
 
@@ -45,7 +45,7 @@ Before running this project, make sure you have:
 ### For Android App
 - Android Studio installed
 - Android device or emulator
-- Minimum Android API level: [Specify your minimum API]
+- Minimum Android API level: 23
 
 ### For Backend
 - Python 3.x installed
@@ -59,7 +59,7 @@ Before running this project, make sure you have:
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/sms-fraud-detection.git
+   git clone https://github.com/anuj-gupta-1/sms-fraud-detection.git
    cd sms-fraud-detection/backend
    ```
 
@@ -155,9 +155,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 👨‍💻 Author
 
-**[Your Name]**
-- GitHub: [@yourusername](https://github.com/yourusername)
-- Email: your.email@example.com
+**Anuj Gupta**
+- GitHub: [@anuj-gupta-1](https://github.com/anuj-gupta-1)
+- Email: ganuj.iit@gmail.com
 
 ## 🙏 Acknowledgments
 

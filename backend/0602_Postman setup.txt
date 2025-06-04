@@ -1,0 +1,243 @@
+# SMS Scam Detection API - Test Commands
+
+## 1. Health Check
+```bash
+curl -X GET http://localhost:5000/health
+```
+
+**Expected Response:**
+```json
+{
+  "status": "healthy",
+  "ollama_status": "CONNECTED",
+  "current_model": "llama3.2:3b",
+  "detection_methods": ["LLM", "RULE_BASED"]
+}
+```
+
+---
+
+## 2. Check Available Models
+```bash
+curl -X GET http://localhost:5000/models
+```
+
+---
+
+## 3. Test Single SMS Analysis
+
+### Test Legitimate Message
+```bash
+curl -X POST http://localhost:5000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Your Amazon package will be delivered today by 6 PM. Track at amazon.com/orders",
+    "sender": "Amazon"
+  }'
+```
+
+### Test Scam Message
+```bash
+curl -X POST http://localhost:5000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "URGENT! Your bank account has been suspended. Click bit.ly/verify123 immediately to restore access!",
+    "sender": "+1234567890"
+  }'
+```
+
+### Test Edge Case (Should be Legitimate)
+```bash
+curl -X POST http://localhost:5000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Your prescription is ready for pickup at CVS Pharmacy. Store hours: 9 AM - 9 PM",
+    "sender": "CVS"
+  }'
+```
+
+**Expected Response Format:**
+```json
+{
+  "classification": "LEGITIMATE",
+  "confidence": "HIGH",
+  "confidence_score": 85,
+  "reason": "Standard delivery notification from legitimate sender",
+  "risk_score": 0.05,
+  "detection_method": "LLM",
+  "model_used": "llama3.2:3b",
+  "sender": "Amazon",
+  "alert_level": "NONE"
+}
+```
+
+---
+
+## 4. Batch Analysis
+```bash
+curl -X POST http://localhost:5000/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {
+        "message": "Your Uber is arriving in 2 minutes",
+        "sender": "Uber"
+      },
+      {
+        "message": "Congratulations! You won $10,000! Reply with your SSN to claim",
+        "sender": "+9999999999"
+      },
+      {
+        "message": "Appointment reminder: Dr. Johnson tomorrow at 3 PM",
+        "sender": "MedCenter"
+      }
+    ]
+  }'
+```
+
+---
+
+## 5. Run Accuracy Test
+```bash
+curl -X GET http://localhost:5000/test
+```
+
+This will test the system with 11 predefined messages and show accuracy percentage.
+
+---
+
+## Postman Collection
+
+### Import this JSON into Postman:
+
+```json
+{
+  "info": {
+    "name": "SMS Scam Detection API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5000/health",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "Analyze Legitimate SMS",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"Your prescription is ready for pickup at CVS\",\n  \"sender\": \"CVS\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/analyze",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["analyze"]
+        }
+      }
+    },
+    {
+      "name": "Analyze Scam SMS",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"URGENT! Account suspended! Click bit.ly/fix123 to verify NOW!\",\n  \"sender\": \"+1234567890\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/analyze",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["analyze"]
+        }
+      }
+    },
+    {
+      "name": "Test Accuracy",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5000/test",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["test"]
+        }
+      }
+    }
+  ]
+}
+```
+
+---
+
+## Debugging Tips
+
+### 1. If getting all SCAM results:
+```bash
+# Check if Ollama is running
+curl -X GET http://localhost:11434/api/tags
+
+# Test with a very obvious legitimate message
+curl -X POST http://localhost:5000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Your verification code is 123456", "sender": "Google"}'
+```
+
+### 2. Check model performance:
+```bash
+# Run the accuracy test
+curl -X GET http://localhost:5000/test
+
+# Should show accuracy > 80% for balanced detection
+```
+
+### 3. Test fallback system:
+```bash
+# Stop Ollama service, then test
+curl -X POST http://localhost:5000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Your package was delivered", "sender": "FedEx"}'
+
+# Should show "detection_method": "RULE_BASED"
+```
+
+---
+
+## Recommended Ollama Models
+
+Install with: `ollama pull <model_name>`
+
+1. **llama3.2:3b** (Best balance) - 2GB RAM
+2. **gemma2:2b** (Fastest) - 1.6GB RAM  
+3. **phi3:3.8b** (Microsoft) - 2.3GB RAM
+4. **qwen2.5:3b** (Multilingual) - 2GB RAM
+5. **mistral:7b** (Most accurate) - 4GB RAM
+
+**Test different models by changing `OLLAMA_MODEL` variable in the Python file.**

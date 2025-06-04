@@ -68,4 +68,10 @@ dependencies {
 
     // HTTP networking - like having a reliable postal service for internet requests
     implementation ("com.squareup.okhttp3:okhttp:4.11.0")
+
+    // Add these to your dependencies block
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation("com.google.code.gson:gson:2.8.9")
+
 }
