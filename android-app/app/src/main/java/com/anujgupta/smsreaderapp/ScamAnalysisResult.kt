@@ -23,37 +23,52 @@ data class ScamAnalysisResult(
 
     // Error and fallback indicators
     val error: String? = null,        // Any error message from the backend
-    val fallback_used: Boolean? = null // True if fallback rules were used
+    val fallback_used: Boolean? = null, // True if fallback rules were used
+
+    // Enhancement 1: Backend sender number check
+    val sender_watchlist_status: String? = null // e.g., "on_watchlist", "none"
 ) {
     /**
      * Quick check: Is this message classified as a scam?
      */
-    val isScam: Boolean
-        get() = classification.equals("SCAM", ignoreCase = true)
+    val isScam: Boolean //
+        get() = classification.equals("SCAM", ignoreCase = true) //
 
     /**
      * Was there an error during analysis or reported by the server?
      */
-    val hasError: Boolean
-        get() = error != null || classification.equals("ERROR", ignoreCase = true)
+    val hasError: Boolean //
+        get() = error != null || classification.equals("ERROR", ignoreCase = true) //
 
     /**
      * Provides a summary string for display.
      */
-    fun toDisplayString(): String {
+    fun toDisplayString(contactName: String? = null): String { // Added contactName parameter
         if (hasError) {
-            return "Error: ${error ?: "Analysis failed."}"
+            return "Error: ${error ?: "Analysis failed."}" //
         }
-        val confidenceText = confidence_score?.let { "$confidence ($it%)" } ?: confidence
-        var displayText = "Classification: $classification\n" +
+        val confidenceText = confidence_score?.let { "$confidence ($it%)" } ?: confidence //
+
+        var senderDisplay = sender ?: "Unknown Sender"
+        contactName?.let { senderDisplay = "$it ($sender)" }
+
+        var displayText = "Sender: $senderDisplay\n" + // Display contact name if available
+                "Classification: $classification\n" +
                 "Confidence: $confidenceText\n" +
                 "Reason: $reason\n" +
                 "Risk Score: $risk_score\n" +
-                "Method: ${detection_method ?: "N/A"} (Model: ${model_used ?: "N/A"})"
-        if (fallback_used == true) {
-            displayText += "\n(Used fallback rules)"
+                "Method: ${detection_method ?: "N/A"} (Model: ${model_used ?: "N/A"})" //
+
+        if (sender_watchlist_status == "on_watchlist") {
+            displayText += "\nWatchlist Status: ❗ ON WATCHLIST ❗"
         }
-        alert_level?.let { displayText += "\nAlert Level: $it" }
+
+        if (fallback_used == true) {
+            displayText += "\n(Used fallback rules)" //
+        }
+        alert_level?.let {
+            if (it != "NONE") displayText += "\nAlert Level: $it" //
+        }
         return displayText
     }
 }

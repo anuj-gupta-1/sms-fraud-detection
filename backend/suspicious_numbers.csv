@@ -1,0 +1,4 @@
+country_code,phone_number,name,source,detection_date
+91,9876500001,ScammerRavi,UserReport_LocalPolice,2025-01-15
+91,9876500002,,GovAlert_CERTIN,2025-02-20
+44,7700900003,UKSpamCo,CrowdSourcedDB,2025-03-10
