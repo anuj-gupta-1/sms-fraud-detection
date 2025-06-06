@@ -3,8 +3,10 @@ package com.anujgupta.smsreaderapp
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -16,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -24,14 +27,27 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.anujgupta.smsreaderapp.data.SmsDatabase
+import com.anujgupta.smsreaderapp.models.SmsAnalysisResult
+import com.anujgupta.smsreaderapp.ui.theme.SMSFraudDetectionTheme
 
+// Add these color extensions
+val ColorScheme.warning: Color
+    get() = Color(0xFFFFA000) // Amber 700
+
+val ColorScheme.warningContainer: Color
+    get() = Color(0xFFFFF3E0) // Orange 50
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        private const val TAG = "MainActivity"
+    }
 
     // Separate launcher for READ_CONTACTS
     private val requestContactsPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
+        Log.d(TAG, "Contacts permission result: $isGranted")
         if (isGranted) {
             Toast.makeText(this, "Contacts permission granted!", Toast.LENGTH_SHORT).show()
         } else {
@@ -45,6 +61,7 @@ class MainActivity : ComponentActivity() {
     private val requestSmsPermissionLauncher = registerForActivityResult( // [MainActivity.kt]
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean -> // [MainActivity.kt]
+        Log.d(TAG, "SMS permission result: $isGranted")
         if (isGranted) { // [MainActivity.kt]
             Toast.makeText(this, "SMS Permission granted! You can now read SMS.", Toast.LENGTH_SHORT).show() // [MainActivity.kt]
         } else { // [MainActivity.kt]
@@ -54,34 +71,49 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) { // [MainActivity.kt]
         super.onCreate(savedInstanceState) // [MainActivity.kt]
+        Log.d(TAG, "onCreate started")
+        
         setContent {
-            // Pass the contact permission launcher to where it's needed
-            SmsReaderAppContainer( // Renamed for clarity, to pass launchers
-                onRequestSmsPermission = { requestSmsPermission() },
-                checkSmsPermission = { checkSmsPermission() },
-                onRequestContactsPermission = { requestContactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS) },
-                checkContactsPermission = { checkContactsPermission() }
-            )
+            Log.d(TAG, "Setting up content")
+            SMSFraudDetectionTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    SmsReaderAppContainer( // Renamed for clarity, to pass launchers
+                        onRequestSmsPermission = { requestSmsPermission() },
+                        checkSmsPermission = { checkSmsPermission() },
+                        onRequestContactsPermission = { requestContactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS) },
+                        checkContactsPermission = { checkContactsPermission() }
+                    )
+                }
+            }
         }
+        Log.d(TAG, "Content setup completed")
     }
 
     private fun checkSmsPermission(): Boolean { // [MainActivity.kt]
-        return ContextCompat.checkSelfPermission( // [MainActivity.kt]
+        val hasPermission = ContextCompat.checkSelfPermission( // [MainActivity.kt]
             this,
             Manifest.permission.READ_SMS // [MainActivity.kt]
         ) == PackageManager.PERMISSION_GRANTED // [MainActivity.kt]
+        Log.d(TAG, "SMS permission check: $hasPermission")
+        return hasPermission // [MainActivity.kt]
     }
 
     private fun requestSmsPermission() { // [MainActivity.kt]
+        Log.d(TAG, "Requesting SMS permission")
         requestSmsPermissionLauncher.launch(Manifest.permission.READ_SMS) // [MainActivity.kt]
     }
 
     // Helper to check contacts permission
     private fun checkContactsPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(
+        val hasPermission = ContextCompat.checkSelfPermission(
             this,
             Manifest.permission.READ_CONTACTS
         ) == PackageManager.PERMISSION_GRANTED
+        Log.d(TAG, "Contacts permission check: $hasPermission")
+        return hasPermission
     }
 }
 
@@ -93,53 +125,70 @@ fun SmsReaderAppContainer( // Renamed from SmsReaderApp
     onRequestContactsPermission: () -> Unit,
     checkContactsPermission: () -> Boolean
 ) {
-    MaterialTheme { // [MainActivity.kt]
-        val context = LocalContext.current
-        // Obtain ViewModel instance here to pass contact permission status
-        val viewModel: SmsViewModel = viewModel(
-            factory = object : ViewModelProvider.Factory {
-                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+    val context = LocalContext.current
+    val TAG = "SmsReaderAppContainer"
+    
+    var errorState by remember { mutableStateOf<String?>(null) }
+    
+    Log.d(TAG, "Creating ViewModel")
+    val viewModel: SmsViewModel = viewModel(
+        factory = object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return try {
+                    Log.d(TAG, "Initializing database")
                     val database = SmsDatabase.getDatabase(context.applicationContext)
+                    Log.d(TAG, "Creating ViewModel instance")
                     @Suppress("UNCHECKED_CAST")
-                    return SmsViewModel(database.smsDao(), context.applicationContext) as T
+                    SmsViewModel(database.smsDao(), context.applicationContext) as T
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error creating ViewModel", e)
+                    errorState = "Error initializing app: ${e.message}"
+                    throw e
                 }
             }
+        }
+    )
+    Log.d(TAG, "ViewModel created successfully")
+
+    LaunchedEffect(checkContactsPermission()) {
+        viewModel.updateContactPermissionStatus()
+    }
+
+    Column( // [MainActivity.kt]
+        modifier = Modifier // [MainActivity.kt]
+            .fillMaxSize() // [MainActivity.kt]
+            .padding(16.dp), // [MainActivity.kt]
+        verticalArrangement = Arrangement.spacedBy(16.dp) // [MainActivity.kt]
+    ) {
+        Text( // [MainActivity.kt]
+            text = "SMS Scam Detective", // [MainActivity.kt]
+            style = MaterialTheme.typography.headlineMedium, // [MainActivity.kt]
+            fontWeight = FontWeight.Bold // [MainActivity.kt]
         )
 
-        // Update ViewModel's knowledge of contact permission status when checked by Activity
-        // This ensures ViewModel is aware if permission changes outside its direct action
-        LaunchedEffect(checkContactsPermission()) {
-            viewModel.updateContactPermissionStatus()
+        errorState?.let { error ->
+            Text(
+                text = error,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(16.dp)
+            )
         }
 
-
-        Column( // [MainActivity.kt]
-            modifier = Modifier // [MainActivity.kt]
-                .fillMaxSize() // [MainActivity.kt]
-                .padding(16.dp), // [MainActivity.kt]
-            verticalArrangement = Arrangement.spacedBy(16.dp) // [MainActivity.kt]
-        ) {
-            Text( // [MainActivity.kt]
-                text = "SMS Scam Detective", // [MainActivity.kt]
-                style = MaterialTheme.typography.headlineMedium, // [MainActivity.kt]
-                fontWeight = FontWeight.Bold // [MainActivity.kt]
-            )
-
-            val hasSmsPerm by rememberUpdatedState(checkSmsPermission()) // [MainActivity.kt]
-            // Get contact permission status from ViewModel as it's now the source of truth for contact lookups
+        if (errorState == null) {
+            val hasSmsPerm by remember { mutableStateOf(checkSmsPermission()) }
             val hasContactsPerm by viewModel.hasContactPermission
 
-            if (hasSmsPerm) { // [MainActivity.kt]
+            if (hasSmsPerm) {
                 SmsAnalysisScreen(
-                    viewModel = viewModel, // Pass the ViewModel
+                    viewModel = viewModel,
                     hasContactsPermission = hasContactsPerm,
                     onRequestContactsPermission = onRequestContactsPermission
                 )
-            } else { // [MainActivity.kt]
-                PermissionRequestScreen( // [MainActivity.kt]
+            } else {
+                PermissionRequestScreen(
                     permissionType = "SMS Reading",
-                    reason = "This app needs permission to read your SMS messages to detect potential scams. Your messages are analyzed locally on your device and by a secure backend.", // [MainActivity.kt]
-                    onRequestPermission = onRequestSmsPermission // [MainActivity.kt]
+                    reason = "This app needs permission to read your SMS messages to detect potential scams. Your messages are analyzed locally on your device and by a secure backend.",
+                    onRequestPermission = onRequestSmsPermission
                 )
             }
         }
@@ -352,6 +401,133 @@ fun SmsAnalysisScreen( // [MainActivity.kt]
                     color = MaterialTheme.colorScheme.onSurfaceVariant, // [MainActivity.kt]
                     style = MaterialTheme.typography.bodyMedium, // [MainActivity.kt]
                     lineHeight = MaterialTheme.typography.bodyMedium.fontSize * 1.4f // CORRECTED LINE, added 2.sp back [MainActivity.kt (corrected lineHeight from user input)]
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun WatchlistIndicator(
+    isOnWatchlist: Boolean,
+    detectionMethod: String?,
+    modifier: Modifier = Modifier
+) {
+    if (isOnWatchlist) {
+        Card(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .padding(8.dp)
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = "Watchlist Warning",
+                    tint = MaterialTheme.colorScheme.error
+                )
+                Column {
+                    Text(
+                        text = "⚠️ Number on Suspicious Watchlist",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (detectionMethod == "WATCHLIST_OVERRIDE") {
+                        Text(
+                            text = "High-confidence threat due to watchlist status",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SmsResultCard(
+    result: SmsAnalysisResult,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = when (result.alertLevel) {
+                "HIGH" -> MaterialTheme.colorScheme.errorContainer
+                "MEDIUM" -> MaterialTheme.colorScheme.warningContainer
+                else -> MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth()
+        ) {
+            // Show watchlist status first if applicable
+            if (result.sender_watchlist_status == "on_watchlist") {
+                WatchlistIndicator(
+                    isOnWatchlist = true,
+                    detectionMethod = result.detectionMethod
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            
+            // Rest of the existing SMS result display
+            Text(
+                text = "From: ${result.sender}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            Text(
+                text = result.messagePreview,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = result.classification,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = when (result.alertLevel) {
+                        "HIGH" -> MaterialTheme.colorScheme.error
+                        "MEDIUM" -> MaterialTheme.colorScheme.warning
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+                
+                Text(
+                    text = "Confidence: ${result.confidence}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            
+            if (result.reason != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = result.reason,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

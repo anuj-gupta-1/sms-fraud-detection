@@ -22,6 +22,7 @@ This system helps users identify potentially fraudulent SMS messages by analyzin
 - RESTful API for mobile app integration
 - Ollama integration for local model execution
 - Fast and accurate fraud classification
+- Suspicious number watchlist for high-confidence threat detection
 
 ## 🛠️ Technology Stack
 
@@ -98,11 +99,33 @@ Before running this project, make sure you have:
 - Update API endpoints and ports in configuration files
 - Configure Ollama model settings
 - Set up any required environment variables
+- Configure suspicious_numbers.csv for watchlist functionality
 
 ### Android Configuration
 - Update network security configuration for HTTP requests
 - Configure SMS permissions in AndroidManifest.xml
 - Set backend server URL in app settings
+
+### Watchlist Configuration
+1. Create `suspicious_numbers.csv` in the backend directory with the following columns:
+   - phone_number: The phone number (with or without country code)
+   - country_code: Optional country code (e.g., 91 for India)
+   - name: Optional identifier or name for the suspicious entity
+   - source: Optional source of the watchlist entry
+   - detection_date: Optional date when the number was identified
+
+Example suspicious_numbers.csv:
+```csv
+phone_number,country_code,name,source,detection_date
++919876543210,91,ScammerA,User Report,2024-03-15
+8765432109,91,ScammerB,Police Report,2024-03-16
++14443332222,1,ScammerC,FBI List,2024-03-17
+```
+
+### Enhanced Security Features
+- **Watchlist-Based Detection**: Messages from known suspicious numbers are automatically classified as high-confidence threats
+- **Confidence Override**: Watchlisted numbers trigger automatic high-confidence scam classification regardless of message content
+- **Detailed Logging**: High-confidence scams are logged for further analysis
 
 ## 📱 How to Use
 
@@ -172,6 +195,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [ ] Create web dashboard for analytics
 - [ ] Add multi-language support
 - [ ] Implement real-time SMS monitoring
+- [ ] Add automated watchlist updates from trusted sources
+- [ ] Implement watchlist sharing between instances
 
 ---
 

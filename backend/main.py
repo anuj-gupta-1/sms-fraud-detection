@@ -179,7 +179,7 @@ REASON: [one sentence explanation]""" #
             OLLAMA_API_URL, 
             json=payload, 
             headers={"Content-Type": "application/json"}, 
-            timeout=20
+            timeout=50
         ) #
         response.raise_for_status() #
 
@@ -349,7 +349,7 @@ def health_check():
             "options": {"num_predict": 10}
         } #
         
-        response = requests.post(OLLAMA_API_URL, json=test_payload, timeout=5) #
+        response = requests.post(OLLAMA_API_URL, json=test_payload, timeout=50) #
         ollama_status = "CONNECTED" if response.status_code == 200 else "ERROR" #
         ollama_response_time = response.elapsed.total_seconds() #
         
@@ -372,7 +372,7 @@ def health_check():
 def list_models():
     """Get available Ollama models"""
     try:
-        response = requests.get("http://localhost:11434/api/tags", timeout=5) #
+        response = requests.get("http://localhost:11434/api/tags", timeout=20) #
         if response.status_code == 200:
             models = response.json().get("models", []) #
             return jsonify({
@@ -393,97 +393,124 @@ def list_models():
 def analyze_sms():
     """Main SMS analysis endpoint - MODIFIED"""
     try:
-        data = request.get_json() #
+        data = request.get_json()
         if not data:
-            return jsonify({"error": "JSON body required"}), 400 #
+            return jsonify({"error": "JSON body required"}), 400
         
-        message_content = data.get('message', '').strip() # Renamed for clarity
-        sender_id = data.get('sender', 'Unknown') # Renamed for clarity
+        message_content = data.get('message', '').strip()
+        sender_id = data.get('sender', 'Unknown')
         
         if not message_content:
-            return jsonify({"error": "Message field required"}), 400 #
+            return jsonify({"error": "Message field required"}), 400
         
-        start_time = datetime.now() #
+        start_time = datetime.now()
+
+        # First check if sender is on watchlist
+        watchlist_status = check_sender_watchlist(sender_id)
+        
         # Core analysis result from LLM or fallback
-        core_analysis_result = classify_sms_with_ollama(message_content, sender_id) #
-        processing_time = (datetime.now() - start_time).total_seconds() #
+        core_analysis_result = classify_sms_with_ollama(message_content, sender_id)
+        processing_time = (datetime.now() - start_time).total_seconds()
         
         # Create the final result object to be sent to client
         final_result = core_analysis_result.copy()
 
-        # Enhancement 1: Check sender watchlist
-        final_result["sender_watchlist_status"] = check_sender_watchlist(sender_id)
+        # Enhancement: Override analysis if sender is on watchlist
+        if watchlist_status == "on_watchlist":
+            # Override the classification to be a high confidence scam
+            final_result.update({
+                "classification": "SCAM",
+                "confidence": "VERY_HIGH",
+                "confidence_score": 95,
+                "reason": f"Sender number is on the suspicious numbers watchlist. Original assessment: {core_analysis_result['reason']}",
+                "risk_score": 0.95,
+                "detection_method": "WATCHLIST_OVERRIDE"
+            })
 
-        # Add other metadata (some might be redundant if already in core_analysis_result but this ensures they are set)
+        # Add sender watchlist status and other metadata
         final_result.update({
-            "sender": sender_id, # Original sender from request
-            "message_preview": message_content[:50] + "..." if len(message_content) > 50 else message_content, #
-            "alert_level": get_alert_level(final_result["classification"], final_result["confidence_score"]), #
-            "processing_time_seconds": round(processing_time, 2), #
-            "timestamp": datetime.now().isoformat() #
+            "sender": sender_id,
+            "sender_watchlist_status": watchlist_status,
+            "message_preview": message_content[:50] + "..." if len(message_content) > 50 else message_content,
+            "alert_level": get_alert_level(final_result["classification"], final_result["confidence_score"]),
+            "processing_time_seconds": round(processing_time, 2),
+            "timestamp": datetime.now().isoformat()
         })
         
-        # Enhancement 3: Log high-confidence scams
-        # Using alert_level as per user's choice (Option B)
+        # Log high-confidence scams (will now include watchlisted numbers automatically due to confidence override)
         if final_result.get("alert_level") == "HIGH":
-            # Pass the original message_content and sender_id, and the core_analysis_result
-            log_high_confidence_scam(sender_id, message_content, core_analysis_result) 
+            log_high_confidence_scam(sender_id, message_content, core_analysis_result)
             
         logger.info(f"✅ Result for {sender_id}: {final_result['classification']} ({final_result['confidence']}), Watchlist: {final_result['sender_watchlist_status']}")
         return jsonify(final_result)
         
     except Exception as e:
-        logger.error(f"💥 Route error: {e}") #
+        logger.error(f"💥 Route error: {e}")
         return jsonify({
             "error": "Internal server error",
             "classification": "ERROR",
-            "detection_method": "ERROR_HANDLER" #
+            "detection_method": "ERROR_HANDLER"
         }), 500
 
-@app.route('/batch', methods=['POST']) # Modified for new fields and logging
+@app.route('/batch', methods=['POST'])
 def batch_analyze():
     """Analyze multiple messages"""
     try:
-        data = request.get_json() #
-        messages_data = data.get('messages', []) # Renamed from 'messages' in original code
+        data = request.get_json()
+        messages_data = data.get('messages', [])
         
         if not messages_data or len(messages_data) == 0:
-            return jsonify({"error": "Messages array required"}), 400 #
+            return jsonify({"error": "Messages array required"}), 400
         
         response_results = []
-        stats = {"scam": 0, "legitimate": 0, "llm_used": 0, "rules_used": 0, "on_watchlist": 0} # Added on_watchlist
+        stats = {"scam": 0, "legitimate": 0, "llm_used": 0, "rules_used": 0, "watchlist_hits": 0}
         
-        for msg_data in messages_data[:20]:  # Increased limit slightly, adjust as needed
-            text = msg_data.get('message', '').strip() #
-            sender = msg_data.get('sender', 'Unknown') #
+        for msg_data in messages_data[:20]:
+            text = msg_data.get('message', '').strip()
+            sender = msg_data.get('sender', 'Unknown')
             
             if text:
-                # Simulate the full /analyze flow for each message to include watchlist and logging
                 start_time = datetime.now()
+                
+                # First check watchlist status
+                watchlist_status = check_sender_watchlist(sender)
+                
+                # Get core analysis
                 core_analysis_result = classify_sms_with_ollama(text, sender)
                 processing_time = (datetime.now() - start_time).total_seconds()
                 
                 # Create the final result object for this message
                 current_result = core_analysis_result.copy()
-                current_result["sender_watchlist_status"] = check_sender_watchlist(sender)
+                
+                # Override analysis if sender is on watchlist
+                if watchlist_status == "on_watchlist":
+                    current_result.update({
+                        "classification": "SCAM",
+                        "confidence": "VERY_HIGH",
+                        "confidence_score": 95,
+                        "reason": f"Sender number is on the suspicious numbers watchlist. Original assessment: {core_analysis_result['reason']}",
+                        "risk_score": 0.95,
+                        "detection_method": "WATCHLIST_OVERRIDE"
+                    })
+                    stats["watchlist_hits"] += 1
+
                 current_result.update({
                     "sender": sender,
+                    "sender_watchlist_status": watchlist_status,
                     "message_preview": text[:50] + "..." if len(text) > 50 else text,
                     "alert_level": get_alert_level(current_result["classification"], current_result["confidence_score"]),
                     "processing_time_seconds": round(processing_time, 2),
                     "timestamp": datetime.now().isoformat()
                 })
 
-                response_results.append(current_result) #
+                response_results.append(current_result)
                 
                 # Update stats
-                stats[current_result['classification'].lower()] = stats.get(current_result['classification'].lower(), 0) + 1 #
-                if current_result['detection_method'] == 'LLM': #
-                    stats['llm_used'] += 1 #
-                else:
-                    stats['rules_used'] += 1 #
-                if current_result["sender_watchlist_status"] == "on_watchlist":
-                    stats['on_watchlist'] += 1
+                stats[current_result['classification'].lower()] = stats.get(current_result['classification'].lower(), 0) + 1
+                if current_result['detection_method'] == 'LLM':
+                    stats['llm_used'] += 1
+                elif current_result['detection_method'] == 'RULE_BASED':
+                    stats['rules_used'] += 1
 
                 # Log if high confidence scam
                 if current_result.get("alert_level") == "HIGH":
@@ -493,10 +520,10 @@ def batch_analyze():
             "results": response_results,
             "count": len(response_results),
             "statistics": stats
-        }) #
+        })
         
     except Exception as e:
-        return jsonify({"error": f"Batch processing failed: {e}"}), 500 #
+        return jsonify({"error": f"Batch processing failed: {e}"}), 500
 
 @app.route('/test', methods=['GET']) # Modified to include watchlist status
 def test_examples():
