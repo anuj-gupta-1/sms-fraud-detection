@@ -28,6 +28,9 @@ interface SmsDao {
     """)
     suspend fun getUnanalyzedReceivedMessages(limit: Int): List<SmsMessage>
 
+    @Query("SELECT * FROM sms_messages WHERE id IN (:messageIds)")
+    suspend fun getMessagesByIds(messageIds: List<Long>): List<SmsMessage>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessages(messages: List<SmsMessage>)
 

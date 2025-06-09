@@ -1,8 +1,9 @@
 package com.anujgupta.smsreaderapp.models
 
 data class SmsAnalysisResult(
+    val id: Long? = null,
     val sender: String,
-    val messagePreview: String,
+    val message_content: String,
     val classification: String,
     val confidence: String,
     val confidenceScore: Int,

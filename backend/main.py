@@ -454,76 +454,70 @@ def analyze_sms():
 
 @app.route('/batch', methods=['POST'])
 def batch_analyze():
-    """Analyze multiple messages"""
-    try:
-        data = request.get_json()
-        messages_data = data.get('messages', [])
-        
-        if not messages_data or len(messages_data) == 0:
-            return jsonify({"error": "Messages array required"}), 400
-        
-        response_results = []
-        stats = {"scam": 0, "legitimate": 0, "llm_used": 0, "rules_used": 0, "watchlist_hits": 0}
-        
-        for msg_data in messages_data[:20]:
-            text = msg_data.get('message', '').strip()
-            sender = msg_data.get('sender', 'Unknown')
-            
-            if text:
-                start_time = datetime.now()
-                
-                # First check watchlist status
-                watchlist_status = check_sender_watchlist(sender)
-                
-                # Get core analysis
-                core_analysis_result = classify_sms_with_ollama(text, sender)
-                processing_time = (datetime.now() - start_time).total_seconds()
-                
-                # Create the final result object for this message
-                current_result = core_analysis_result.copy()
-                
-                # Override analysis if sender is on watchlist
-                if watchlist_status == "on_watchlist":
-                    current_result.update({
-                        "classification": "SCAM",
-                        "confidence": "VERY_HIGH",
-                        "confidence_score": 95,
-                        "reason": f"Sender number is on the suspicious numbers watchlist. Original assessment: {core_analysis_result['reason']}",
-                        "risk_score": 0.95,
-                        "detection_method": "WATCHLIST_OVERRIDE"
-                    })
-                    stats["watchlist_hits"] += 1
+    """Analyzes a batch of SMS messages."""
+    start_time = datetime.now()
+    data = request.get_json()
+    if not data or 'messages' not in data or not isinstance(data['messages'], list):
+        return jsonify({"error": "Invalid request. 'messages' list is required."}), 400
 
-                current_result.update({
-                    "sender": sender,
-                    "sender_watchlist_status": watchlist_status,
-                    "message_preview": text[:50] + "..." if len(text) > 50 else text,
-                    "alert_level": get_alert_level(current_result["classification"], current_result["confidence_score"]),
-                    "processing_time_seconds": round(processing_time, 2),
-                    "timestamp": datetime.now().isoformat()
-                })
+    results = []
+    messages = data['messages']
 
-                response_results.append(current_result)
-                
-                # Update stats
-                stats[current_result['classification'].lower()] = stats.get(current_result['classification'].lower(), 0) + 1
-                if current_result['detection_method'] == 'LLM':
-                    stats['llm_used'] += 1
-                elif current_result['detection_method'] == 'RULE_BASED':
-                    stats['rules_used'] += 1
+    for msg in messages:
+        msg_id = msg.get('id')
+        sender = msg.get('sender')
+        message = msg.get('message')
 
-                # Log if high confidence scam
-                if current_result.get("alert_level") == "HIGH":
-                    log_high_confidence_scam(sender, text, core_analysis_result)
+        if not all([msg_id is not None, sender, message]):
+            # Skip invalid message entries in batch
+            continue
+
+        # --- Core Analysis ---
+        analysis_start_time = datetime.now()
+        analysis_result = classify_sms_with_ollama(message, sender)
+        analysis_end_time = datetime.now()
         
-        return jsonify({
-            "results": response_results,
-            "count": len(response_results),
-            "statistics": stats
-        })
+        # --- Enhancement 1: Watchlist Check ---
+        watchlist_status = check_sender_watchlist(sender)
         
-    except Exception as e:
-        return jsonify({"error": f"Batch processing failed: {e}"}), 500
+        # Override classification if sender is on watchlist (high-confidence signal)
+        if watchlist_status == 'on_watchlist':
+            analysis_result['classification'] = "SCAM"
+            analysis_result['confidence_score'] = 95
+            analysis_result['confidence'] = "VERY_HIGH"
+            analysis_result['reason'] = "Sender is on the suspicious number watchlist. " + analysis_result.get('reason', '')
+            analysis_result['detection_method'] = "WATCHLIST_OVERRIDE"
+
+        # --- Log high-confidence scams ---
+        if analysis_result['classification'] == "SCAM" and analysis_result['confidence_score'] >= 85:
+            log_high_confidence_scam(sender, message, analysis_result)
+
+        # --- Alert Level ---
+        alert_level = get_alert_level(analysis_result['classification'], analysis_result['confidence_score'])
+
+        # --- Final Assembly ---
+        final_result = {
+            "id": msg_id,
+            "sender": sender,
+            "message_content": message, # Return full message content
+            "classification": analysis_result.get('classification', 'ERROR'),
+            "confidence": analysis_result.get('confidence', 'NONE'),
+            "confidence_score": analysis_result.get('confidence_score', 0),
+            "reason": analysis_result.get('reason'),
+            "risk_score": analysis_result.get('risk_score', 0.0),
+            "detection_method": analysis_result.get('detection_method', 'ERROR'),
+            "alert_level": alert_level,
+            "sender_watchlist_status": watchlist_status,
+            "processing_time_seconds": (analysis_end_time - analysis_start_time).total_seconds(),
+            "timestamp": datetime.now().isoformat()
+        }
+        results.append(final_result)
+
+    end_time = datetime.now()
+    processing_time = (end_time - start_time).total_seconds()
+    logger.info(f"✅ Batch processed {len(messages)} messages in {processing_time:.2f} seconds.")
+
+    return jsonify(results)
 
 @app.route('/test', methods=['GET']) # Modified to include watchlist status
 def test_examples():

@@ -10,12 +10,19 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person // For contact permission button
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -30,6 +37,20 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.anujgupta.smsreaderapp.data.SmsDatabase
 import com.anujgupta.smsreaderapp.models.SmsAnalysisResult
 import com.anujgupta.smsreaderapp.ui.theme.SMSFraudDetectionTheme
+import com.anujgupta.smsreaderapp.data.SmsMessage
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.material.icons.filled.Cached
+import androidx.compose.ui.graphics.graphicsLayer
+import com.anujgupta.smsreaderapp.ui.theme.AlertGreen
+import com.anujgupta.smsreaderapp.ui.theme.AlertOrange
+import com.anujgupta.smsreaderapp.ui.theme.AlertRed
+import androidx.compose.runtime.setValue
 
 // Add these color extensions
 val ColorScheme.warning: Color
@@ -41,6 +62,13 @@ val ColorScheme.warningContainer: Color
 class MainActivity : ComponentActivity() {
     companion object {
         private const val TAG = "MainActivity"
+    }
+
+    private var hasSmsPermission by mutableStateOf(false)
+
+    override fun onResume() {
+        super.onResume()
+        hasSmsPermission = checkSmsPermission()
     }
 
     // Separate launcher for READ_CONTACTS
@@ -58,19 +86,21 @@ class MainActivity : ComponentActivity() {
         // For simplicity, we'll have the Composable update the ViewModel's state.
     }
 
-    private val requestSmsPermissionLauncher = registerForActivityResult( // [MainActivity.kt]
+    private val requestSmsPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean -> // [MainActivity.kt]
+    ) { isGranted: Boolean ->
+        hasSmsPermission = isGranted
         Log.d(TAG, "SMS permission result: $isGranted")
-        if (isGranted) { // [MainActivity.kt]
-            Toast.makeText(this, "SMS Permission granted! You can now read SMS.", Toast.LENGTH_SHORT).show() // [MainActivity.kt]
-        } else { // [MainActivity.kt]
-            Toast.makeText(this, "SMS Permission denied. Cannot read SMS.", Toast.LENGTH_SHORT).show() // [MainActivity.kt]
+        if (isGranted) {
+            Toast.makeText(this, "SMS Permission granted! You can now read SMS.", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "SMS Permission denied. Cannot read SMS.", Toast.LENGTH_SHORT).show()
         }
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) { // [MainActivity.kt]
-        super.onCreate(savedInstanceState) // [MainActivity.kt]
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        hasSmsPermission = checkSmsPermission()
         Log.d(TAG, "onCreate started")
         
         setContent {
@@ -80,7 +110,8 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    SmsReaderAppContainer( // Renamed for clarity, to pass launchers
+                    SmsReaderAppContainer(
+                        hasSmsPermission = hasSmsPermission,
                         onRequestSmsPermission = { requestSmsPermission() },
                         checkSmsPermission = { checkSmsPermission() },
                         onRequestContactsPermission = { requestContactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS) },
@@ -92,18 +123,18 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "Content setup completed")
     }
 
-    private fun checkSmsPermission(): Boolean { // [MainActivity.kt]
-        val hasPermission = ContextCompat.checkSelfPermission( // [MainActivity.kt]
+    private fun checkSmsPermission(): Boolean {
+        val hasPermission = ContextCompat.checkSelfPermission(
             this,
-            Manifest.permission.READ_SMS // [MainActivity.kt]
-        ) == PackageManager.PERMISSION_GRANTED // [MainActivity.kt]
+            Manifest.permission.READ_SMS
+        ) == PackageManager.PERMISSION_GRANTED
         Log.d(TAG, "SMS permission check: $hasPermission")
-        return hasPermission // [MainActivity.kt]
+        return hasPermission
     }
 
-    private fun requestSmsPermission() { // [MainActivity.kt]
+    private fun requestSmsPermission() {
         Log.d(TAG, "Requesting SMS permission")
-        requestSmsPermissionLauncher.launch(Manifest.permission.READ_SMS) // [MainActivity.kt]
+        requestSmsPermissionLauncher.launch(Manifest.permission.READ_SMS)
     }
 
     // Helper to check contacts permission
@@ -119,7 +150,8 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SmsReaderAppContainer( // Renamed from SmsReaderApp
+fun SmsReaderAppContainer(
+    hasSmsPermission: Boolean,
     onRequestSmsPermission: () -> Unit,
     checkSmsPermission: () -> Boolean,
     onRequestContactsPermission: () -> Unit,
@@ -154,16 +186,16 @@ fun SmsReaderAppContainer( // Renamed from SmsReaderApp
         viewModel.updateContactPermissionStatus()
     }
 
-    Column( // [MainActivity.kt]
-        modifier = Modifier // [MainActivity.kt]
-            .fillMaxSize() // [MainActivity.kt]
-            .padding(16.dp), // [MainActivity.kt]
-        verticalArrangement = Arrangement.spacedBy(16.dp) // [MainActivity.kt]
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text( // [MainActivity.kt]
-            text = "SMS Scam Detective", // [MainActivity.kt]
-            style = MaterialTheme.typography.headlineMedium, // [MainActivity.kt]
-            fontWeight = FontWeight.Bold // [MainActivity.kt]
+        Text(
+            text = "SMS Scam Detective",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
         )
 
         errorState?.let { error ->
@@ -175,10 +207,9 @@ fun SmsReaderAppContainer( // Renamed from SmsReaderApp
         }
 
         if (errorState == null) {
-            val hasSmsPerm by remember { mutableStateOf(checkSmsPermission()) }
             val hasContactsPerm by viewModel.hasContactPermission
 
-            if (hasSmsPerm) {
+            if (hasSmsPermission) {
                 SmsAnalysisScreen(
                     viewModel = viewModel,
                     hasContactsPermission = hasContactsPerm,
@@ -196,47 +227,47 @@ fun SmsReaderAppContainer( // Renamed from SmsReaderApp
 }
 
 @Composable
-fun PermissionRequestScreen( // [MainActivity.kt]
+fun PermissionRequestScreen(
     permissionType: String,
     reason: String,
     onRequestPermission: () -> Unit) {
-    Card( // [MainActivity.kt]
-        modifier = Modifier.fillMaxWidth(), // [MainActivity.kt]
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer) // [MainActivity.kt]
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
     ) {
-        Column( // [MainActivity.kt]
-            modifier = Modifier.padding(16.dp), // [MainActivity.kt]
-            verticalArrangement = Arrangement.spacedBy(12.dp), // [MainActivity.kt]
-            horizontalAlignment = Alignment.CenterHorizontally // [MainActivity.kt]
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row( // [MainActivity.kt]
-                verticalAlignment = Alignment.CenterVertically, // [MainActivity.kt]
-                horizontalArrangement = Arrangement.spacedBy(8.dp) // [MainActivity.kt]
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon( // [MainActivity.kt]
-                    imageVector = Icons.Default.Warning, // [MainActivity.kt]
-                    contentDescription = "Warning", // [MainActivity.kt]
-                    tint = MaterialTheme.colorScheme.error // [MainActivity.kt]
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = "Warning",
+                    tint = MaterialTheme.colorScheme.error
                 )
-                Text( // [MainActivity.kt]
-                    text = "$permissionType Permission Required", // [MainActivity.kt]
-                    fontWeight = FontWeight.Bold, // [MainActivity.kt]
-                    color = MaterialTheme.colorScheme.error, // [MainActivity.kt]
-                    style = MaterialTheme.typography.titleMedium // [MainActivity.kt]
+                Text(
+                    text = "$permissionType Permission Required",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.titleMedium
                 )
             }
 
-            Text( // [MainActivity.kt]
-                text = reason, // [MainActivity.kt]
-                color = MaterialTheme.colorScheme.onErrorContainer, // [MainActivity.kt]
-                style = MaterialTheme.typography.bodyMedium // [MainActivity.kt]
+            Text(
+                text = reason,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                style = MaterialTheme.typography.bodyMedium
             )
 
-            Button( // [MainActivity.kt]
-                onClick = onRequestPermission, // [MainActivity.kt]
-                modifier = Modifier.fillMaxWidth() // [MainActivity.kt]
+            Button(
+                onClick = onRequestPermission,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Grant $permissionType Permission") // [MainActivity.kt]
+                Text("Grant $permissionType Permission")
             }
         }
     }
@@ -244,165 +275,149 @@ fun PermissionRequestScreen( // [MainActivity.kt]
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SmsAnalysisScreen( // [MainActivity.kt]
-    viewModel: SmsViewModel, // Accept ViewModel as parameter
+fun SmsAnalysisScreen(
+    viewModel: SmsViewModel,
     hasContactsPermission: Boolean,
     onRequestContactsPermission: () -> Unit
 ) {
-    // Observe state from ViewModel
-    val isLoading by viewModel.isLoading // [MainActivity.kt]
-    val isAnalyzing by viewModel.isAnalyzing // [MainActivity.kt]
-    val messageCount by viewModel.messageCount // [MainActivity.kt]
-    val scamCount by viewModel.scamCount // [MainActivity.kt]
-    val serverStatus by viewModel.serverStatus // [MainActivity.kt]
-    val lastResultDisplay by viewModel.lastAnalysisResultDisplay // [MainActivity.kt]
+    val serverStatus by viewModel.serverStatus
+    val isAnalyzing by viewModel.isAnalyzing
+    val lastAnalysisResultDisplay by viewModel.lastAnalysisResultDisplay
+    val allMessages by viewModel.allMessages.observeAsState(initial = emptyList())
+    val selectedMessages by viewModel.selectedMessages
+    val analysisResults by viewModel.analysisResults
+    val flippedCards by viewModel.flippedCards
 
-    Column( // [MainActivity.kt]
-        verticalArrangement = Arrangement.spacedBy(12.dp) // [MainActivity.kt]
-    ) {
-        Card( // [MainActivity.kt]
-            modifier = Modifier.fillMaxWidth(), // [MainActivity.kt]
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer) // [MainActivity.kt]
-        ) {
-            Column( // [MainActivity.kt]
-                modifier = Modifier.padding(16.dp), // [MainActivity.kt]
-                verticalArrangement = Arrangement.spacedBy(8.dp) // [MainActivity.kt]
-            ) {
-                Row( // [MainActivity.kt]
-                    verticalAlignment = Alignment.CenterVertically, // [MainActivity.kt]
-                    horizontalArrangement = Arrangement.spacedBy(8.dp) // [MainActivity.kt]
-                ) {
-                    Icon( // [MainActivity.kt]
-                        imageVector = Icons.Default.Lock, // [MainActivity.kt]
-                        contentDescription = "Security", // [MainActivity.kt]
-                        tint = MaterialTheme.colorScheme.primary // [MainActivity.kt]
+    LaunchedEffect(key1 = true) {
+        viewModel.loadSmsMessages()
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("SMS Protection") },
+                navigationIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = "App Icon",
+                        modifier = Modifier.padding(start = 12.dp)
                     )
-                    Text( // [MainActivity.kt]
-                        text = "SMS Scam Protection Status", // [MainActivity.kt]
-                        fontWeight = FontWeight.Bold, // [MainActivity.kt]
-                        color = MaterialTheme.colorScheme.primary, // [MainActivity.kt]
-                        style = MaterialTheme.typography.titleMedium // [MainActivity.kt]
+                },
+                actions = {
+                    val isConnected = serverStatus.startsWith("Connected")
+                    Icon(
+                        imageVector = if (isConnected) Icons.Default.CloudDone else Icons.Default.CloudOff,
+                        contentDescription = "Server Status",
+                        tint = if (isConnected) AlertGreen else AlertRed,
+                        modifier = Modifier.padding(end = 12.dp)
                     )
-                }
-                Text( // [MainActivity.kt]
-                    text = "Server: $serverStatus", // [MainActivity.kt]
-                    color = MaterialTheme.colorScheme.onPrimaryContainer, // [MainActivity.kt]
-                    style = MaterialTheme.typography.bodyMedium // [MainActivity.kt]
-                )
-                Text( // [MainActivity.kt]
-                    text = "Loaded Messages: $messageCount | Potential Scams Found: $scamCount", // [MainActivity.kt]
-                    color = MaterialTheme.colorScheme.onPrimaryContainer, // [MainActivity.kt]
-                    style = MaterialTheme.typography.bodyMedium // [MainActivity.kt]
-                )
-                // Contact Permission Button/Status
-                if (!hasContactsPermission) {
-                    Button(onClick = {
-                        onRequestContactsPermission()
-                        // ViewModel will update its status via LaunchedEffect in SmsReaderAppContainer
-                        // or after permission result in Activity.
-                        // For immediate UI feedback on click, can also call viewModel.updateContactPermissionStatus()
-                        // but it's better if Activity drives this after permission result.
-                        // We need to ensure viewModel.updateContactPermissionStatus() is called after
-                        // the permission dialog closes. The Activity's callback for
-                        // requestContactsPermissionLauncher should ensure this.
-                        // A simpler way for now:
-                        // viewModel.updateContactPermissionStatus() // Call this to recheck (might not be immediate)
-                    }) {
-//                        Icon(Icons.Default.Contacts, contentDescription = "Contacts Icon")
-                        Icon(Icons.Filled.Person, contentDescription = "Contacts Icon") // CORRECTED LINE
-                        Spacer(Modifier.width(8.dp))
-                        Text("Enable Contact Matching")
+                    IconButton(onClick = { viewModel.loadSmsMessages() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh SMS")
                     }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            StatusInfo(
+                messageCount = allMessages.size,
+                hasContactsPermission = hasContactsPermission,
+                lastOperation = lastAnalysisResultDisplay,
+                onRequestContactsPermission = onRequestContactsPermission
+            )
+            
+            Button(
+                onClick = { viewModel.analyzeSelectedMessages() },
+                enabled = selectedMessages.isNotEmpty() && !isAnalyzing,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (isAnalyzing) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Analyzing...")
                 } else {
-                    Text(
-                        text = "Contact Matching: Enabled",
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        style = MaterialTheme.typography.bodyMedium
+                    Text("Analyze Selected (${selectedMessages.size})")
+                }
+            }
+            
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(allMessages, key = { it.id }) { message ->
+                    val analysisResult = analysisResults.find { it.id == message.id }
+                    // This is a simplification. In a real app, you'd have a better way 
+                    // to check contacts for each number.
+                    val hasContact = false 
+
+                    FlippableSmsCard(
+                        message = message,
+                        analysisResult = analysisResult,
+                        isSelected = selectedMessages.contains(message.id),
+                        isFlipped = flippedCards.contains(message.id),
+                        onToggleSelection = { viewModel.toggleSelection(message.id) },
+                        onToggleFlip = { viewModel.toggleCardFlip(message.id) },
+                        hasContact = hasContact
                     )
                 }
             }
         }
+    }
+}
 
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { // [MainActivity.kt]
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { // [MainActivity.kt]
-                Button( // [MainActivity.kt]
-                    onClick = { viewModel.loadSmsMessages() }, // [MainActivity.kt]
-                    modifier = Modifier.weight(1f), // [MainActivity.kt]
-                    enabled = !isLoading && !isAnalyzing // [MainActivity.kt]
-                ) {
-                    if (isLoading && viewModel.lastAnalysisResultDisplay.value.startsWith("Loading messages...")) { // [MainActivity.kt]
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) // [MainActivity.kt]
-                        Spacer(modifier = Modifier.width(8.dp)) // [MainActivity.kt]
-                        Text("Loading...") // [MainActivity.kt]
-                    } else { // [MainActivity.kt]
-                        Text("Load SMS") // [MainActivity.kt]
-                    }
-                }
-                Button( // [MainActivity.kt]
-                    onClick = { viewModel.testServerConnection() }, // [MainActivity.kt]
-                    modifier = Modifier.weight(1f), // [MainActivity.kt]
-                    enabled = !isLoading && !isAnalyzing // [MainActivity.kt]
-                ) {
-                    Text("Test Server") // [MainActivity.kt]
-                }
-            }
-
-            Button( // [MainActivity.kt]
-                onClick = { viewModel.analyzeForScams() }, // [MainActivity.kt]
-                modifier = Modifier.fillMaxWidth(), // [MainActivity.kt]
-                enabled = !isLoading && !isAnalyzing && messageCount > 0 // [MainActivity.kt]
-            ) {
-                if (isAnalyzing && viewModel.lastAnalysisResultDisplay.value.contains("Analyzing message")) { // [MainActivity.kt]
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) // [MainActivity.kt]
-                    Spacer(modifier = Modifier.width(8.dp)) // [MainActivity.kt]
-                    Text("Analyzing...") // [MainActivity.kt]
-                } else { // [MainActivity.kt]
-                    Text("Analyze New SMS for Scams") // [MainActivity.kt]
-                }
-            }
-
-            Button( // [MainActivity.kt]
-                onClick = { viewModel.testScamDetection() }, // [MainActivity.kt]
-                modifier = Modifier.fillMaxWidth(), // [MainActivity.kt]
-                enabled = !isLoading && !isAnalyzing // [MainActivity.kt]
-            ) {
-                if (isAnalyzing && viewModel.lastAnalysisResultDisplay.value.startsWith("Testing scam detection")) { // [MainActivity.kt]
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) // [MainActivity.kt]
-                    Spacer(modifier = Modifier.width(8.dp)) // [MainActivity.kt]
-                    Text("Testing...") // [MainActivity.kt]
-                } else { // [MainActivity.kt]
-                    Text("Test Sample Scam Detection") // [MainActivity.kt]
-                }
-            }
-            Button( // [MainActivity.kt]
-                onClick = { viewModel.clearMessages() }, // [MainActivity.kt]
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error), // [MainActivity.kt]
-                modifier = Modifier.fillMaxWidth() // [MainActivity.kt]
-            ) {
-                Text("Clear All Local Messages") // [MainActivity.kt]
-            }
-        }
-
-
-        Card( // [MainActivity.kt]
-            modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 120.dp) // [MainActivity.kt]
+@Composable
+fun StatusInfo(
+    messageCount: Int,
+    hasContactsPermission: Boolean,
+    lastOperation: String,
+    onRequestContactsPermission: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Column( // [MainActivity.kt]
-                modifier = Modifier.padding(16.dp) // [MainActivity.kt]
-            ) {
-                Text( // [MainActivity.kt]
-                    text = "Latest Operation Result", // [MainActivity.kt]
-                    fontWeight = FontWeight.Bold, // [MainActivity.kt]
-                    style = MaterialTheme.typography.titleSmall // [MainActivity.kt]
-                )
-                Spacer(modifier = Modifier.height(4.dp)) // [MainActivity.kt]
-                Text( // [MainActivity.kt]
-                    text = lastResultDisplay, // [MainActivity.kt]
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, // [MainActivity.kt]
-                    style = MaterialTheme.typography.bodyMedium, // [MainActivity.kt]
-                    lineHeight = MaterialTheme.typography.bodyMedium.fontSize * 1.4f // CORRECTED LINE, added 2.sp back [MainActivity.kt (corrected lineHeight from user input)]
-                )
+            Text(
+                text = "Status",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Messages (last 24h): $messageCount",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = "Contact Access: ${if (hasContactsPermission) "Enabled" else "Disabled"}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            if (!hasContactsPermission) {
+                Button(
+                    onClick = onRequestContactsPermission,
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Text("Enable Contact Matching")
+                }
             }
+            Text(
+                text = "Last Operation: $lastOperation",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -495,7 +510,7 @@ fun SmsResultCard(
             Spacer(modifier = Modifier.height(4.dp))
             
             Text(
-                text = result.messagePreview,
+                text = result.message_content,
                 style = MaterialTheme.typography.bodyMedium
             )
             
@@ -531,5 +546,177 @@ fun SmsResultCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun SmsList(
+    messages: List<SmsMessage>,
+    selectedMessages: Set<Long>,
+    onMessageSelected: (Long) -> Unit
+) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        items(messages) { message ->
+            SmsListItem(
+                message = message,
+                isSelected = selectedMessages.contains(message.id),
+                onMessageSelected = { onMessageSelected(message.id) }
+            )
+        }
+    }
+}
+
+@Composable
+fun SmsListItem(
+    message: SmsMessage,
+    isSelected: Boolean,
+    onMessageSelected: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable { onMessageSelected() },
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onMessageSelected() }
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(text = "From: ${message.address}", fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(text = message.body)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(message.date)),
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FlippableSmsCard(
+    message: SmsMessage,
+    analysisResult: SmsAnalysisResult?,
+    isSelected: Boolean,
+    isFlipped: Boolean,
+    onToggleSelection: () -> Unit,
+    onToggleFlip: () -> Unit,
+    hasContact: Boolean
+) {
+    val rotation by animateFloatAsState(
+        targetValue = if (isFlipped) 180f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "flip"
+    )
+
+    Card(
+        onClick = { if (analysisResult != null) onToggleFlip() },
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                rotationY = rotation
+                cameraDistance = 12 * density
+            },
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+        )
+    ) {
+        if (rotation < 90f) {
+            SmsCardFront(message, isSelected, analysisResult != null, onToggleSelection, onToggleFlip)
+        } else {
+            AnalysisCardBack(analysisResult, hasContact, Modifier.graphicsLayer { rotationY = 180f })
+        }
+    }
+}
+
+@Composable
+fun SmsCardFront(
+    message: SmsMessage,
+    isSelected: Boolean,
+    hasAnalysis: Boolean,
+    onToggleSelection: () -> Unit,
+    onToggleFlip: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = isSelected,
+            onCheckedChange = { onToggleSelection() },
+            modifier = Modifier.padding(end = 12.dp)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = message.address, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = message.body, style = MaterialTheme.typography.bodyMedium)
+        }
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.SpaceBetween) {
+            if (hasAnalysis) {
+                IconButton(onClick = onToggleFlip) {
+                    Icon(Icons.Default.Cached, contentDescription = "Flip to see analysis")
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.date)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+fun AnalysisCardBack(result: SmsAnalysisResult?, hasContact: Boolean, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (result == null) {
+            Text("No analysis available.")
+            return
+        }
+
+        val (resultColor, resultText) = when (result.alertLevel) {
+            "HIGH" -> Pair(AlertRed, "SCAM")
+            "MEDIUM" -> Pair(AlertOrange, "SUSPICIOUS")
+            else -> Pair(AlertGreen, "LEGITIMATE")
+        }
+
+        Text(
+            text = "RESULT: $resultText",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = resultColor
+        )
+        Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+
+        Text("Confidence: ${result.confidence}", style = MaterialTheme.typography.bodyMedium)
+        result.reason?.let { Text("Reason: $it", style = MaterialTheme.typography.bodyMedium) }
+        Text("On Watchlist: ${if (result.sender_watchlist_status == "on_watchlist") "✅ Yes" else "❌ No"}", style = MaterialTheme.typography.bodyMedium)
+        Text("In Contacts: ${if (hasContact) "✅ Yes" else "❌ No"}", style = MaterialTheme.typography.bodyMedium)
     }
 }

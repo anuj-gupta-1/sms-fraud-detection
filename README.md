@@ -1,28 +1,38 @@
 # SMS Fraud Detection System
 
-A comprehensive solution for detecting fraudulent SMS messages using machine learning. This project combines an Android mobile application with a Python backend powered by Large Language Models (LLM) through Ollama.
+A comprehensive, user-friendly solution for detecting fraudulent SMS messages on Android, powered by local Large Language Models (LLM) through Ollama.
 
 ## 🚀 Project Overview
 
-This system helps users identify potentially fraudulent SMS messages by analyzing message content using advanced AI models. The solution consists of two main components:
+This system empowers users to identify potentially fraudulent SMS messages by analyzing message content with advanced AI models running locally on a backend server. The project has been recently updated with a major focus on user experience, featuring a redesigned UI and a more intuitive workflow.
 
-- **Android App**: Mobile interface for users to check SMS messages
-- **Python Backend**: AI-powered analysis engine using LLM models via Ollama
+-   **Android App**: A modern, responsive interface for users to manage and analyze SMS messages.
+-   **Python Backend**: An AI-powered analysis engine using LLM models via Ollama.
 
 ## 📱 Features
 
 ### Android Application
-- Read and analyze SMS messages from device
-- User-friendly interface for fraud detection
-- Real-time communication with backend API
-- Secure message processing
+- **Redesigned UI**: A clean, modern interface using the "Guardian Blue" color theme for a professional and trustworthy feel.
+- **Flippable SMS Cards**: An intuitive card-based layout where each SMS can be "flipped" to view its detailed analysis.
+- **Dynamic Permission Handling**: A seamless permission flow where the UI automatically updates upon granting access, with non-intrusive prompts for optional permissions.
+- **Batch Analysis**: Select up to 5 SMS messages for simultaneous analysis.
+- **At-a-Glance Status**: A redesigned header and status card provide immediate feedback on server connection and app status.
+- **Real-time Communication**: Secure, real-time communication with the backend for fast analysis.
 
 ### Backend System
-- AI-powered fraud detection using LLM models
-- RESTful API for mobile app integration
-- Ollama integration for local model execution
-- Fast and accurate fraud classification
-- Suspicious number watchlist for high-confidence threat detection
+- **AI-Powered Fraud Detection**: Utilizes local LLM models via Ollama for privacy-focused analysis.
+- **Batch Processing API**: A robust `/batch` endpoint to handle multiple messages in a single request.
+- **Suspicious Number Watchlist**: Instantly flag messages from known suspicious numbers.
+- **Detailed Analysis Results**: Returns a comprehensive analysis, including classification, confidence scores, risk levels, and reasoning.
+
+## 🎨 UI/UX Enhancements
+
+The application has been completely redesigned with the user in mind.
+
+-   **Guardian Blue Theme**: A professional color palette based on cool blues and grays to inspire trust and calmness.
+-   **Card-Based Layout**: All SMS messages from the last 24 hours are displayed on individual cards.
+-   **Interactive Analysis**: If an analysis is available, a "flip" icon appears. Tapping the card flips it over to reveal the results, with color-coding for immediate risk assessment (Red for Scam, Orange for Suspicious, Green for Legitimate).
+-   **Streamlined Actions**: A single "Analyze Selected" button and a clear header simplify the user workflow.
 
 ## 🛠️ Technology Stack
 

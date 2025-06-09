@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import com.anujgupta.smsreaderapp.data.SmsDao
 import com.anujgupta.smsreaderapp.data.SmsMessage
 import com.anujgupta.smsreaderapp.models.SmsAnalysisResult
+import com.anujgupta.smsreaderapp.services.BatchSmsInfo
 import com.anujgupta.smsreaderapp.services.ScamDetectionService
 import com.anujgupta.smsreaderapp.services.SmsReader
 
@@ -35,6 +36,12 @@ class SmsViewModel(
 
     val allMessages: LiveData<List<SmsMessage>> = smsDao.getAllMessages().asLiveData()
     val scamMessages: LiveData<List<SmsMessage>> = smsDao.getScamMessages().asLiveData()
+
+    private val _selectedMessages = mutableStateOf<Set<Long>>(emptySet())
+    val selectedMessages: State<Set<Long>> = _selectedMessages
+
+    private val _flippedCards = mutableStateOf<Set<Long>>(emptySet())
+    val flippedCards: State<Set<Long>> = _flippedCards
 
     private var _isLoading = mutableStateOf(false)
     val isLoading: State<Boolean> = _isLoading
@@ -54,6 +61,9 @@ class SmsViewModel(
     private var _lastAnalysisResultDisplay = mutableStateOf("No operations performed yet.")
     val lastAnalysisResultDisplay: State<String> = _lastAnalysisResultDisplay
 
+    private val _analysisResults = mutableStateOf<List<SmsAnalysisResult>>(emptyList())
+    val analysisResults: State<List<SmsAnalysisResult>> = _analysisResults
+
     private val _hasContactPermission = mutableStateOf(checkContactsPermission())
     val hasContactPermission: State<Boolean> = _hasContactPermission
 
@@ -69,6 +79,79 @@ class SmsViewModel(
     fun updateContactPermissionStatus() {
         Log.d(TAG, "Updating contact permission status")
         _hasContactPermission.value = checkContactsPermission()
+    }
+
+    fun toggleCardFlip(messageId: Long) {
+        val currentFlipped = _flippedCards.value.toMutableSet()
+        if (currentFlipped.contains(messageId)) {
+            currentFlipped.remove(messageId)
+        } else {
+            currentFlipped.add(messageId)
+        }
+        _flippedCards.value = currentFlipped
+    }
+
+    fun toggleSelection(messageId: Long) {
+        val currentSelection = _selectedMessages.value.toMutableSet()
+        if (currentSelection.contains(messageId)) {
+            currentSelection.remove(messageId)
+        } else {
+            if (currentSelection.size < 5) {
+                currentSelection.add(messageId)
+            }
+        }
+        _selectedMessages.value = currentSelection
+    }
+
+    fun analyzeSelectedMessages() {
+        viewModelScope.launch {
+            if (_selectedMessages.value.isEmpty()) {
+                _lastAnalysisResultDisplay.value = "No messages selected to analyze."
+                return@launch
+            }
+            _isAnalyzing.value = true
+            _lastAnalysisResultDisplay.value = "Analyzing selected messages..."
+            _analysisResults.value = emptyList()
+
+            try {
+                val selectedIds = _selectedMessages.value.toList()
+                val messagesToAnalyze = withContext(Dispatchers.IO) {
+                    smsDao.getMessagesByIds(selectedIds)
+                }
+
+                if (messagesToAnalyze.isEmpty()) {
+                    _lastAnalysisResultDisplay.value = "Could not find selected messages in the database."
+                    _isAnalyzing.value = false
+                    return@launch
+                }
+                
+                val batchInfo = messagesToAnalyze.map { BatchSmsInfo(id = it.id, message = it.body, sender = it.address) }
+                val results = scamDetectionService.analyzeMultipleSms(batchInfo)
+                
+                _analysisResults.value = results
+
+                withContext(Dispatchers.IO) {
+                    results.forEach { result ->
+                        smsDao.updateScamAnalysis(
+                            messageId = result.id!!,
+                            isAnalyzed = true,
+                            classification = result.classification,
+                            confidence = result.confidence,
+                            analysisDate = System.currentTimeMillis()
+                        )
+                    }
+                }
+
+                _lastAnalysisResultDisplay.value = "Analysis complete for ${results.size} messages."
+                _selectedMessages.value = emptySet()
+
+            } catch (e: Exception) {
+                _lastAnalysisResultDisplay.value = "Analysis failed: ${e.message}"
+                Log.e("SmsViewModel", "Error during selected messages analysis", e)
+            } finally {
+                _isAnalyzing.value = false
+            }
+        }
     }
 
     private suspend fun getContactName(phoneNumber: String): String? = withContext(Dispatchers.IO) {
